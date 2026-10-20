@@ -1,0 +1,138 @@
+name: stormapi
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-stormapi}
+      MYSQL_USER: ${MYSQL_USER:-stormapi}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-stormapi}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  gateway-service:
+    build:
+      context: .
+      dockerfile: gateway-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-stormapi}
+      MYSQL_USER: ${MYSQL_USER:-stormapi}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-stormapi}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-jwt-secret-0123456789abcdef}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 40s
+
+  execution-service:
+    build:
+      context: .
+      dockerfile: execution-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-stormapi}
+      MYSQL_USER: ${MYSQL_USER:-stormapi}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-stormapi}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-jwt-secret-0123456789abcdef}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 40s
+
+  report-service:
+    build:
+      context: .
+      dockerfile: report-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-stormapi}
+      MYSQL_USER: ${MYSQL_USER:-stormapi}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-stormapi}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-jwt-secret-0123456789abcdef}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # execution-service's Flyway migration creates test_runs, which the
+      # Metrics Service reads — wait for it to be up before starting.
+      execution-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 40s
+
+  target-api:
+    build:
+      context: .
+      dockerfile: target-api/Dockerfile
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 40s
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      gateway-service:
+        condition: service_healthy
+      execution-service:
+        condition: service_healthy
+      report-service:
+        condition: service_healthy
+      target-api:
+        condition: service_healthy
+
+volumes:
+  mysql-data:

@@ -1,0 +1,34 @@
+# Java
+/target/
+gateway-service/target/
+common-security/target/
+execution-service/target/
+report-service/target/
+target-api/target/
+frontend/dist/
+*.class
+*.jar
+
+# Maven
+.mvn/
+
+# IntelliJ
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# Node
+node_modules/
+
+# Logs
+logs/
+*.log
+
+# Environment
+.env
+
+# OS
+.DS_Store
+Thumbs.db
